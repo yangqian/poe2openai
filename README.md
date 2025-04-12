@@ -48,6 +48,9 @@ curl --location 'http://127.0.0.1:9881/v1/chat/completions' \
 
 - [x] 流式输出
 - [x] 非流式输出
+- [x] 搜索
+- [x] 思考
+- [x] 图片生成
 - [ ] Function Call
 - [x] Tools Call
 - [ ] 图片解析

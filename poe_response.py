@@ -6,22 +6,11 @@ import json
 
 
 class PoeResponse:
-    """
-    Poe消息响应
-    """
-
     async def stream_response(self,
                               poe_bot_stream_partials: AsyncGenerator[BotMessage, None],
                               bot_name: str,
                               tools: list
                               ) -> AsyncGenerator[str, None]:
-        """
-        流式输出
-        :param poe_bot_stream_partials:
-        :param bot_name:
-        :param tools:
-        :return:
-        """
         response_template = {
             "id": str(uuid.uuid4()),
             "object": "chat.completion.chunk",
@@ -40,20 +29,45 @@ class PoeResponse:
             ],
         }
         is_use_tool = False
+        last_texts = ""  # Store last text for comparison
+        
         async for partial in poe_bot_stream_partials:
-            # 有工具传入并且partial.data不为空时，直接返回data, 也就是原始数据输出
             if len(tools) > 0 and partial.data is not None:
                 is_use_tool = True
-                yield f"data: {json.dumps(partial.data, ensure_ascii=False)}\n\n"
+                #yield f"data: {json.dumps(partial.data, ensure_ascii=False)}\n\n"
+            #else:
+            current_text = partial.text
+            if current_text.startswith("Searching ..."):
+                continue
+            if current_text.startswith("Generating image"):
+                continue
+            if current_text.startswith("Thinking..."):
+                continue
+            if partial.is_replace_response:
+                # Shift texts in the buffer
+                #last_three_texts = last_three_texts[1:] + [current_text]
+                
+                # Check if the texts are incrementally growing
+                if len(last_texts)==0:
+                    diff_text = current_text
+                if (len(current_text) > len(last_texts) and
+                    current_text.startswith(last_texts)):
+                    # Output only the difference between the last two texts
+                    diff_text = current_text[len(last_texts):]
+                    if diff_text[-1].isdigit():
+                        continue
+                    response_template["choices"][0]["delta"]["content"] = diff_text
+                    last_texts = current_text
+                    yield f"data: {json.dumps(response_template)}\n\n"
+                else:
+                    continue
             else:
-                # 其他响应正常使用模板处理
-                response_template["choices"][0]["delta"]["content"] = partial.text
+                last_texts += current_text
+                response_template["choices"][0]["delta"]["content"] = current_text
                 yield f"data: {json.dumps(response_template)}\n\n"
 
         if is_use_tool is False:
-            # Termination sequence
-            response_template["choices"][0]["delta"] = {}  # Empty 'delta' field
-            # Set 'finish_reason' to 'stop'
+            response_template["choices"][0]["delta"] = {}
             response_template["choices"][0]["finish_reason"] = "stop"
             yield f"data: {json.dumps(response_template)}\n\ndata: [DONE]\n\n"
         else:
@@ -64,13 +78,6 @@ class PoeResponse:
                                   bot_name: str,
                                   tools: list
                                   ) -> dict:
-        """
-        非流式输出
-        :param poe_bot_stream_partials:
-        :param bot_name:
-        :return:
-        """
-
         def get_from_list(lst, index, default=None):
             return lst[index] if index < len(lst) else default
 
@@ -100,6 +107,8 @@ class PoeResponse:
         arguments = []
         arguments_only_content = ""
         id = []
+        last_replace_text = ""
+        
         async for partial in poe_bot_stream_partials:
             if len(tools) > 0 and partial.data is not None:
                 is_use_tool = True
@@ -124,12 +133,16 @@ class PoeResponse:
                 if item_content is not None:
                     content += item_content
             else:
-                content += partial.text
+                if partial.is_replace_response:
+                    last_replace_text = partial.text
+                    content = partial.text
+                else:
+                    if not last_replace_text:  # Only append if not in replace mode
+                        content += partial.text
 
         if is_use_tool is False:
             response_template["choices"][0]["message"]["content"] = content
         else:
-            # 使用工具时数据结构
             arguments.append(arguments_only_content)
             tool_calls = []
             for i in range(len(id)):
