@@ -1,3 +1,5 @@
+# A fork of https://github.com/RipperTs/poe2openai
+
 # Poe2OpenAI
 
 poe官方sdk转换openai接口规范, 您必须拥有 poe 订阅会员权限, 然后到 [https://poe.com/api_key](https://poe.com/api_key) 页面拿到您的key   
